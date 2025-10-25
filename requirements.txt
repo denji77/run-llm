@@ -1,0 +1,21 @@
+# Core dependencies for Local Command-Line Chatbot
+# Python 3.8+ required
+
+# Hugging Face Transformers
+transformers>=4.30.0
+
+# PyTorch (CPU version - for GPU, install separately based on CUDA version)
+torch>=2.0.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Optional but recommended
+accelerate>=0.20.0
+
+# For better tokenization
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# Progress bars and utilities (automatically included with transformers)
+tqdm>=4.65.0
