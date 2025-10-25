@@ -16,7 +16,7 @@ class VLMChatInterface:
     Handles user input, commands, and conversation flow with vision support.
     """
 
-    def __init__(self, model_name=None, max_turns=5, use_gpu=True):
+    def __init__(self, model_name=None, max_turns=10, use_gpu=True):
         """
         Initialize the chat interface.
 
@@ -85,19 +85,40 @@ class VLMChatInterface:
     def generate_response(self, user_input):
         """
         Generate a response from the model based on user input and history.
+        First checks if the question can be answered from memory/context.
 
         Args:
             user_input (str): User's message
 
         Returns:
-            str: Generated response from the model
+            str: Generated response from the model or memory
         """
         try:
+            # First, try to answer from stored context/memory
+            contextual_answer = self.memory.answer_contextual_question(user_input)
+            if contextual_answer:
+                return contextual_answer
+
             # Get conversation history
             history = self.memory.get_messages()
 
+            # Add key facts to the conversation context for better awareness
+            key_facts = self.memory.get_key_facts()
+
             # Format conversation history for the model
             conversation_list = []
+
+            # If we have key facts, prepend them as context
+            if key_facts:
+                facts_str = "Remember: " + ", ".join(
+                    [f"{k.replace('_', ' ')}: {v}" for k, v in key_facts.items()]
+                )
+                # Add as a system-like message at the start
+                conversation_list.append({"role": "user", "content": facts_str})
+                conversation_list.append(
+                    {"role": "assistant", "content": "I'll remember that information."}
+                )
+
             for msg in history:
                 role = msg.get("role", "")
                 content = msg.get("content", "")
@@ -141,9 +162,20 @@ class VLMChatInterface:
             self.current_image = None
             print("\n✓ Conversation history cleared!")
             print("✓ Image context cleared!")
+            print(
+                "ℹ️  Note: Key facts (like your name) are preserved. Use /clearall to remove everything."
+            )
+
+        elif command == "/clearall":
+            self.memory.clear_all()
+            self.current_image = None
+            print("\n✓ Everything cleared (history, key facts, and image context)!")
 
         elif command == "/info":
             self.display_info()
+
+        elif command == "/facts":
+            self.display_key_facts()
 
         elif command.startswith("/image "):
             image_path = command[7:].strip()
@@ -199,7 +231,11 @@ class VLMChatInterface:
         print("  TEXT COMMANDS:")
         print("    /help              - Show this help message")
         print("    /info              - Show chatbot and memory information")
+        print(
+            "    /facts             - Show stored key facts (name, preferences, etc.)"
+        )
         print("    /clear             - Clear conversation history and image")
+        print("    /clearall          - Clear everything including key facts")
         print("    /exit or /quit     - Exit the chatbot")
         print()
         print("  IMAGE COMMANDS:")
@@ -242,6 +278,40 @@ class VLMChatInterface:
             print(f"    Current Image: {self.current_image}")
         else:
             print(f"    Current Image: None (text-only mode)")
+        print()
+
+        # Show key facts count
+        key_facts = self.memory.get_key_facts()
+        print(f"  KEY FACTS:")
+        print(f"    Stored Facts: {len(key_facts)}")
+        if key_facts:
+            print(f"    (Use /facts to view details)")
+        print()
+        print("=" * 70)
+        print()
+
+    def display_key_facts(self):
+        """
+        Display stored key facts.
+        """
+        key_facts = self.memory.get_key_facts()
+
+        print()
+        print("=" * 70)
+        print("  STORED KEY FACTS")
+        print("=" * 70)
+        print()
+
+        if key_facts:
+            for key, value in key_facts.items():
+                formatted_key = key.replace("_", " ").title()
+                print(f"  {formatted_key}: {value}")
+        else:
+            print("  No key facts stored yet.")
+            print(
+                "  (I'll remember important information like your name automatically)"
+            )
+
         print()
         print("=" * 70)
         print()
@@ -297,7 +367,7 @@ def main():
     """
     Entry point for running the VLM chatbot interface.
     """
-    chat = VLMChatInterface(model_name="apple/FastVLM-0.5B", max_turns=5, use_gpu=True)
+    chat = VLMChatInterface(model_name="apple/FastVLM-0.5B", max_turns=4, use_gpu=True)
     chat.run()
 
 

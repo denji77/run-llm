@@ -47,7 +47,7 @@ run_fastvlm.bat
 
 # Options
 python run_fastvlm.py --no-gpu          # Force CPU
-python run_fastvlm.py --max-turns 5     # Set memory window
+python run_fastvlm.py --max-turns 4     # Set memory window (default)
 python run_fastvlm.py --help            # Show all options
 ```
 
@@ -81,7 +81,7 @@ Exiting chatbot. Goodbye!
 
 ### Memory Management
 - **Type**: Sliding window buffer using Python deque
-- **Default**: 5 turns (10 messages)
+- **Default**: 4 turns (8 messages)
 - **Behavior**: Automatic FIFO removal when full
 - **Purpose**: Maintains conversation context while managing token limits
 

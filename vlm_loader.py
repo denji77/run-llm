@@ -184,32 +184,34 @@ class VLMLoader:
         # Build messages list in the format expected by chat template
         messages = []
 
-        # Add conversation history if available (but exclude the current message if it's already there)
+        # Add ALL conversation history if available
         if conversation_history:
-            # Only include recent history to avoid context overflow
-            # Keep last 3 exchanges (6 messages)
-            recent_history = conversation_history[-6:]
-            for msg in recent_history:
+            for msg in conversation_history:
                 role = msg.get("role", "")
                 content = msg.get("content", "")
 
-                # Skip if this is the current message (avoid duplicates)
-                if content == message and role == "user":
+                # Ensure content is not empty
+                if not content or not content.strip():
                     continue
 
+                # Map roles correctly - model expects "user" and "assistant"
                 if role == "user":
                     messages.append({"role": "user", "content": content})
                 elif role in ["assistant", "bot"]:
                     messages.append({"role": "assistant", "content": content})
 
-        # Add current user message (only if not already in messages)
-        if not messages or messages[-1].get("content") != message:
-            messages.append({"role": "user", "content": message})
+        # Add current user message
+        messages.append({"role": "user", "content": message})
+
+        # Debug: Print conversation context being sent to model
+        # print(f"\n[DEBUG] Sending {len(messages)} messages to model:")
+        # for i, msg in enumerate(messages):
+        #     print(f"  {i+1}. {msg['role']}: {msg['content'][:50]}...")
 
         # Generate response
         response = self.generate_response(
             messages=messages,
-            max_new_tokens=100,
+            max_new_tokens=120,
             temperature=0.7,
             top_p=0.9,
             do_sample=True,
@@ -223,9 +225,17 @@ class VLMLoader:
             response = response[10:].strip()
         if response.startswith("assistant:"):
             response = response[10:].strip()
+        if response.startswith("Bot:"):
+            response = response[4:].strip()
 
         # Stop at multiple answer indicators
-        stop_markers = ["\n\nHuman:", "\n\nUser:", "\nA:", "\nB:", "\nC:"]
+        stop_markers = [
+            "\n\nHuman:",
+            "\n\nUser:",
+            "\nUser:",
+            "\nHuman:",
+            "\n\nAssistant:",
+        ]
         for marker in stop_markers:
             if marker in response:
                 response = response.split(marker)[0].strip()

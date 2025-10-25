@@ -54,8 +54,8 @@ Features:
     parser.add_argument(
         "--max-turns",
         type=int,
-        default=5,
-        help="Maximum conversation turns to remember (default: 5)",
+        default=10,
+        help="Maximum conversation turns to remember (default: 10)",
     )
 
     parser.add_argument(

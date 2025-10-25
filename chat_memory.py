@@ -1,48 +1,57 @@
 """
 chat_memory.py
 Module for managing conversation history with sliding window buffer.
+Enhanced with persistent key facts storage for better context awareness.
 """
 
 from collections import deque
 from typing import List, Dict, Optional
+import re
 
 
 class ChatMemory:
     """
     Manages conversation history using a sliding window buffer.
     Maintains only the most recent N turns to keep context relevant.
+    Enhanced with persistent key facts storage for important information.
     """
 
-    def __init__(self, max_turns=5):
+    def __init__(self, max_turns=10):
         """
         Initialize the ChatMemory with a sliding window buffer.
 
         Args:
             max_turns (int): Maximum number of conversation turns to maintain.
-                           Default is 5 (5 user messages + 5 bot responses = 10 messages).
+                           Default is 4 (4 user messages + 4 bot responses = 8 messages).
         """
         self.max_turns = max_turns
         self.history = deque(maxlen=max_turns * 2)
         self.turn_count = 0
+        self.key_facts = {}  # Store important facts that persist beyond sliding window
+        self.conversation_summary = []  # Store summaries of older conversations
 
     def add_user_message(self, message: str):
         """
         Add a user message to the conversation history.
+        Also extracts and stores key facts from the message.
 
         Args:
             message (str): The user's input message
         """
         self.history.append({"role": "user", "content": message})
+        self._extract_key_facts(message, "user")
 
     def add_bot_message(self, message: str):
         """
         Add a bot response to the conversation history.
+        Also extracts and stores key facts from the message.
 
         Args:
             message (str): The bot's response message
         """
-        self.history.append({"role": "bot", "content": message})
+        self.history.append({"role": "assistant", "content": message})
         self.turn_count += 1
+        self._extract_key_facts(message, "assistant")
 
     def add_exchange(self, user_message: str, bot_message: str):
         """
@@ -86,13 +95,14 @@ class ChatMemory:
         """
         formatted_lines = []
         for msg in self.history:
-            role = "User" if msg["role"] == "user" else "Bot"
+            role = "User" if msg["role"] == "user" else "Assistant"
             formatted_lines.append(f"{role}: {msg['content']}")
         return separator.join(formatted_lines)
 
     def get_context_for_model(self, current_input: str) -> str:
         """
         Build context string for the model including history and current input.
+        Includes key facts for better context awareness.
 
         Args:
             current_input (str): The current user input
@@ -102,11 +112,19 @@ class ChatMemory:
         """
         context_parts = []
 
+        # Add key facts if they exist
+        if self.key_facts:
+            facts_str = "Important context: " + ", ".join(
+                [f"{k}: {v}" for k, v in self.key_facts.items()]
+            )
+            context_parts.append(facts_str)
+            context_parts.append("")
+
         for msg in self.history:
             if msg["role"] == "user":
                 context_parts.append(f"User: {msg['content']}")
-            else:
-                context_parts.append(f"Bot: {msg['content']}")
+            elif msg["role"] == "assistant":
+                context_parts.append(f"Assistant: {msg['content']}")
 
         context_parts.append(f"User: {current_input}")
         context_parts.append("Bot:")
@@ -128,9 +146,11 @@ class ChatMemory:
     def clear_history(self):
         """
         Clear all conversation history and reset turn count.
+        Optionally preserves key facts.
         """
         self.history.clear()
         self.turn_count = 0
+        # Note: key_facts are preserved by default. Use clear_all() to clear everything.
 
     def is_empty(self) -> bool:
         """
@@ -194,7 +214,149 @@ class ChatMemory:
         Returns:
             str: Detailed memory representation
         """
-        return f"ChatMemory(max_turns={self.max_turns}, current_messages={len(self.history)})"
+        return f"ChatMemory(max_turns={self.max_turns}, current_messages={len(self.history)}, key_facts={len(self.key_facts)})"
+
+    def _extract_key_facts(self, message: str, role: str):
+        """
+        Extract and store key facts from messages.
+        Identifies user names, preferences, and important context.
+
+        Args:
+            message (str): The message to extract facts from
+            role (str): The role (user or assistant)
+        """
+        if role == "user":
+            # Extract user's name
+            name_patterns = [
+                r"my name is (\w+)",
+                r"i'm (\w+)",
+                r"i am (\w+)",
+                r"call me (\w+)",
+                r"this is (\w+)",
+            ]
+            for pattern in name_patterns:
+                match = re.search(pattern, message.lower())
+                if match:
+                    name = match.group(1).capitalize()
+                    self.key_facts["user_name"] = name
+                    break
+
+            # Track first question asked
+            if "first_question" not in self.key_facts and len(self.history) <= 2:
+                # This might be the first question
+                question_indicators = [
+                    "?",
+                    "what",
+                    "how",
+                    "why",
+                    "when",
+                    "where",
+                    "who",
+                ]
+                if any(
+                    indicator in message.lower() for indicator in question_indicators
+                ):
+                    self.key_facts["first_question"] = message
+
+        elif role == "assistant":
+            # Could extract other facts from bot responses if needed
+            pass
+
+    def get_key_facts(self) -> Dict[str, str]:
+        """
+        Get all stored key facts.
+
+        Returns:
+            dict: Dictionary of key facts
+        """
+        return self.key_facts.copy()
+
+    def add_key_fact(self, key: str, value: str):
+        """
+        Manually add a key fact.
+
+        Args:
+            key (str): Fact key/name
+            value (str): Fact value
+        """
+        self.key_facts[key] = value
+
+    def remove_key_fact(self, key: str):
+        """
+        Remove a specific key fact.
+
+        Args:
+            key (str): Fact key to remove
+        """
+        if key in self.key_facts:
+            del self.key_facts[key]
+
+    def clear_all(self):
+        """
+        Clear everything including history and key facts.
+        """
+        self.history.clear()
+        self.turn_count = 0
+        self.key_facts.clear()
+        self.conversation_summary.clear()
+
+    def get_enriched_history(self) -> List[Dict[str, str]]:
+        """
+        Get conversation history enriched with key facts context.
+
+        Returns:
+            list: Enriched message history
+        """
+        messages = list(self.history)
+
+        # If we have key facts and messages, prepend context as a system-like message
+        if self.key_facts and messages:
+            facts_content = "Context: " + ", ".join(
+                [f"{k.replace('_', ' ')}: {v}" for k, v in self.key_facts.items()]
+            )
+            # Insert at beginning (but this is informational, not sent to model directly)
+            return [{"role": "system", "content": facts_content}] + messages
+
+        return messages
+
+    def answer_contextual_question(self, question: str) -> Optional[str]:
+        """
+        Try to answer contextual questions using stored facts and history.
+
+        Args:
+            question (str): The question to answer
+
+        Returns:
+            str or None: Answer if found, None otherwise
+        """
+        question_lower = question.lower().strip()
+
+        # Check for name-related questions
+        if any(
+            phrase in question_lower
+            for phrase in ["what is my name", "my name", "who am i"]
+        ):
+            if "user_name" in self.key_facts:
+                return f"Your name is {self.key_facts['user_name']}."
+
+        # Check for first question recall
+        if any(
+            phrase in question_lower
+            for phrase in ["first question", "first thing i asked", "initially asked"]
+        ):
+            if "first_question" in self.key_facts:
+                return (
+                    f"Your first question was: \"{self.key_facts['first_question']}\""
+                )
+
+        # Check recent history for the answer
+        if "first question" in question_lower or "asked" in question_lower:
+            # Look through history
+            for i, msg in enumerate(self.history):
+                if msg["role"] == "user" and i == 0:
+                    return f"Your first question was: \"{msg['content']}\""
+
+        return None
 
 
 if __name__ == "__main__":
